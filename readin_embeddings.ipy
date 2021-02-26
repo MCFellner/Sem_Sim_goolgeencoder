@@ -1,0 +1,117 @@
+import numpy as np
+import pandas as pd
+import scipy
+import sys
+import seaborn as sns
+import matplotlib.pyplot as plt
+#import d00_utils.fileutils as fileutils
+import os
+import tensorflow_text
+import tensorflow_hub as hub
+
+
+# function collection
+
+def read_embed_data(csv_file,column2embed,columns2keep,column2dropna=[]):
+    """function reading in item based csv with namings, 
+    returns pandas dataframe with specified columns plus embeddings
+    Parameters: 
+    csv_file (str): csv file with encoding='UTF-8' (for umlauts) 
+    column2embed (str): column with names/sentences to get embeddings
+    columns2keep (list/str): select columns to keep from csv (important: need to be unique to not cause merging errors)
+    column2dropna (list/str), optional: column with nan that defined named trials
+    Returns: 
+    int: Description of return value 
+    """
+    #load csv with data
+    data=pd.read_csv(csv_file,encoding='UTF-8')
+    data=data[columns2keep]
+    
+    #get sentence encoder
+    embed = hub.load("https://tfhub.dev/google/universal-sentence-encoder-multilingual-large/3")
+    
+    # only select named pics
+    named_data=data.dropna(subset=[column2dropna]).reset_index(drop=True)   
+    #get word embeddings
+    embed_names=embed(named_data[column2embed].values.tolist())
+    embed_values=embed_names.numpy()    
+    # add embeddings to dataframe
+    dim_names=['dim'+str(x+1) for x in range(embed_values.shape[1])]
+    embed_df=pd.DataFrame(embed_values,columns=dim_names)
+    embed_df=pd.concat([named_data, embed_df], axis=1)   
+    #merge with data 
+    data=data.merge(embed_df, on=columns2keep, how='left')
+    return data
+
+
+def plot_similarity(labels, features, rotation, save_option=False, fig_file=[]):
+  """ plot similarity matrix for sentence embeddings 
+  
+  Parameters:
+      labels (list): embedded sentences
+      features (np.array): embeddings of sentences
+      rotation (int): rotation of labels
+      save_option (bool): save fig
+      fig_file (str): filename to save figure to"""
+  corr = np.inner(features, features)
+  sns.set(font_scale=1.2)
+  g = sns.heatmap(
+      corr,
+      xticklabels=labels,
+      yticklabels=labels,
+      vmin=0,
+      vmax=1,
+      cmap="YlOrRd")
+  g.set_xticklabels(labels, rotation=rotation)
+  g.set_title("Semantic Textual Similarity")
+  if save_option:
+      plt.savefig(fig_file, bbox_inches='tight')
+  plt.close('all')
+
+def plot_for_each_type(data,feature_columns,sel_col,column2embed,column2dropna,sel_path):
+    all_items=pd.unique(data[sel_col]).tolist()    
+    for sel_item in all_items:
+        sel_data=data[data[sel_col]==sel_item].dropna(subset=[column2dropna])
+        filename=os.path.join(sel_path,'figure_'+str(sel_item)+'.svg')
+        plot_similarity(sel_data[column2embed].tolist(), sel_data[feature_columns],90,save_option=True,fig_file=filename)
+
+
+def create_folder(*args):
+    import os
+    sel_path=os.path.join(*args)
+    if not os.path.exists(sel_path):
+        os.makedirs(sel_path)
+    return  sel_path
+
+# plot embeddings similarity matrizes/ save as svg
+
+# quantify similarity for each pic
+
+# write embeddings to file (merge pandas df)
+
+# pcas on dimensions
+
+
+########### pipeline
+project_path='D:\squiggles\scripts\\behav\sem_sim_py'
+
+
+csv_file='D:\squiggles\scripts\\behav\sem_sim_py\data\pilot_namings.csv'
+column2embed='Original'
+columns2keep=['Original','subject','Pic','named','PicID']
+column2dropna='named' #leave empty if not needed
+
+data=read_embed_data(csv_file,column2embed,columns2keep,column2dropna)
+
+feature_columns=[x for x in list(data.columns) if 'dim' in x]
+
+#plot similarity maps for each subject
+sel_path=create_folder(project_path,'output','figures','semsim','subject')
+plot_for_each_type(data,feature_columns,'subject',column2embed,column2dropna,sel_path)
+
+# plot similarity map for each item
+sel_path=create_folder(project_path,'output','figures','semsim','item')
+plot_for_each_type(data,feature_columns,'PicID',column2embed,column2dropna,sel_path)
+
+
+# write csv file output
