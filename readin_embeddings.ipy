@@ -72,7 +72,7 @@ def plot_for_each_type(data,feature_columns,sel_col,column2embed,column2dropna,s
     all_items=pd.unique(data[sel_col]).tolist()    
     for sel_item in all_items:
         sel_data=data[data[sel_col]==sel_item].dropna(subset=[column2dropna])
-        filename=os.path.join(sel_path,'figure_'+str(sel_item)+'.svg')
+        filename=os.path.join(sel_path,'figure_'+str(sel_item).replace('.','_')+'.svg')
         plot_similarity(sel_data[column2embed].tolist(), sel_data[feature_columns],90,save_option=True,fig_file=filename)
 
 
@@ -93,25 +93,126 @@ def create_folder(*args):
 
 
 ########### pipeline
-project_path='D:\squiggles\scripts\\behav\sem_sim_py'
+# %% plot embeddings similarity matrizes/ save as svg
+all_data=pd.DataFrame()
+all_paradigms=['pilot','mem']  #,'fmri']
+for paradigm in all_paradigms:
+    project_path='D:\\squiggles\\scripts\\behav\\sem_sim_py\\'
+    csv_file='D:\\squiggles\\scripts\\behav\\sem_sim_py\data\\'+paradigm+'_namings.csv'
+    
+    
+    column2embed='corrected'
+    columns2keep=['corrected','subject','Pic','named','PicID']
+    column2dropna='named' #leave empty if not needed
+    
+    data=read_embed_data(csv_file,column2embed,columns2keep,column2dropna)
+    
+    feature_columns=[x for x in list(data.columns) if 'dim' in x]
+    
+    #plot similarity maps for each subject
+    sel_path=create_folder(project_path,'output','figures',paradigm,'semsim','subject')
+    plot_for_each_type(data,feature_columns,'subject',column2embed,column2dropna,sel_path)
+    
+    # plot similarity map for each item
+    sel_path=create_folder(project_path,'output','figures',paradigm,'semsim','item')
+    plot_for_each_type(data,feature_columns,'Pic',column2embed,column2dropna,sel_path)
+    
+    
+    # write csv file output
+    sel_path=create_folder(project_path,'data')
+    filename=os.path.join(sel_path,paradigm+'multiling_embed.csv')
+
+    data.to_csv(filename, index=False)
+    data['paradigm']=paradigm
+    # combine all paradigms
+    all_data=all_data.append(data)
 
 
-csv_file='D:\squiggles\scripts\\behav\sem_sim_py\data\pilot_namings.csv'
-column2embed='Original'
-columns2keep=['Original','subject','Pic','named','PicID']
-column2dropna='named' #leave empty if not needed
 
-data=read_embed_data(csv_file,column2embed,columns2keep,column2dropna)
+# %% get similarity per item
 
-feature_columns=[x for x in list(data.columns) if 'dim' in x]
+# loop through all unique Pic
+all_items=pd.unique(all_data['Pic']).tolist()    
+named_data=all_data.dropna(subset=[column2dropna])
 
-#plot similarity maps for each subject
-sel_path=create_folder(project_path,'output','figures','semsim','subject')
-plot_for_each_type(data,feature_columns,'subject',column2embed,column2dropna,sel_path)
+simvalue_item=np.empty(len(all_items),dtype=object)
+count_named=np.empty_like(simvalue_item)
+count_shown=np.empty_like(simvalue_item)
 
-# plot similarity map for each item
-sel_path=create_folder(project_path,'output','figures','semsim','item')
-plot_for_each_type(data,feature_columns,'PicID',column2embed,column2dropna,sel_path)
+for i, sel_item in enumerate(all_items):
+    sel_data=named_data[named_data['Pic']==sel_item]
+    count_named[i]=len(named_data[named_data['Pic']==sel_item])
+    count_shown[i]=len(all_data[all_data['Pic']==sel_item])
+    # get embeddings values & calculate inner
+    item_sim = np.inner(sel_data[feature_columns], sel_data[feature_columns])
+    sel_ind=np.triu_indices(len(item_sim), k=+1, m=None)
+    simvalue_item[i]=np.mean(item_sim[sel_ind])
+    
+    
+# perm stats distribution of within pic similarit
+n_rand=1000
+simvalue_itemrand=np.empty((len(all_items),n_rand),dtype=object)
+for r in range(n_rand):
+    # randomize Pic column
+    rand_pic=np.random.permutation(named_data.loc[:,'Pic'])
+    for i, sel_item in enumerate(all_items):
+        sel_data=named_data[rand_pic==sel_item]
+        # get embeddings values & calculate inner
+        item_sim = np.inner(sel_data[feature_columns], sel_data[feature_columns])
+        sel_ind=np.triu_indices(len(item_sim), k=+1, m=None)
+        simvalue_itemrand[i,r]=np.mean(item_sim[sel_ind])
 
+
+# get rank for each pic
+sorted_simvalue=np.sort(simvalue_itemrand)
+ps_pic=np.sum(np.greater_equal(sorted_simvalue,simvalue_item[:,np.newaxis]),axis=-1)/n_rand;
+
+#get mean distribution
+sorted_meansimvalue=np.sort(np.nanmean(simvalue_itemrand,axis=0))
+mean_acrosspics=np.nanmean(simvalue_item,axis=0)
+p_all=np.sum(np.greater_equal(sorted_meansimvalue[np.newaxis,:],mean_acrosspics),axis=-1)/n_rand;
+
+# save info with pic metrics (sim value for each each pic,p-value for each pic, count names, count shown)
+
+simvalue_pic=pd.DataFrame({'Pic':all_items,'simvalue':simvalue_item,'p_value_perm':ps_pic,'count_named':count_named,'count_shown':count_shown})
 
 # write csv file output
+sel_path=create_folder(project_path,'data')
+filename=os.path.join(sel_path,'multiling_embed_picinfo_eeg.csv')
+data.to_csv(filename, index=False)
+
+# plot hist with simvalues across pics
+g=sns.histplot(data=simvalue_pic,x='simvalue', stat='probability')
+g.axvline(mean_acrosspics[0],color='k',linestyle='--')
+g.axvline(np.nanmean(sorted_meansimvalue),color='grey',linestyle='--')
+
+g.set_xlabel('mean similarity in naming')
+g.set_ylabel('proportion of items')
+g.set_title('perm stat p= '+str(p_all))
+fig=g.get_figure()
+fig.savefig('D:\\squiggles\\scripts\\behav\\sem_sim_py\\output\\figures\\mean_sim_eachitem_eeg.svg', bbox_inches='tight')
+
+# check which dimension explain most variance in semsim (only use )
+
+
+
+# %% pca (also dimension reduction for clustering)
+
+from sklearn import decomposition
+from sklearn.preprocessing import StandardScaler
+ 
+X=named_data[feature_columns].to_numpy()
+X=StandardScaler().fit_transform(X)
+pca=decomposition.PCA(whiten=True)
+
+pca.fit(X)
+
+plt.plot(pca.explained_variance_ratio_.cumsum())
+
+X_trans=pca.transform(X)
+
+
+test=named_data.sort_values(by=['dim3'])
+
+x1=pca.inverse_transform(X_trans[:,0])
+# mds
