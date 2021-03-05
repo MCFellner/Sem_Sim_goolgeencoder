@@ -183,7 +183,7 @@ data.to_csv(filename, index=False)
 
 # plot hist with simvalues across pics
 g=sns.histplot(data=simvalue_pic,x='simvalue', stat='probability')
-g.axvline(mean_acrosspics[0],color='k',linestyle='--')
+g.axvline(mean_acrosspics,color='k',linestyle='--')
 g.axvline(np.nanmean(sorted_meansimvalue),color='grey',linestyle='--')
 
 g.set_xlabel('mean similarity in naming')
@@ -209,10 +209,110 @@ pca.fit(X)
 
 plt.plot(pca.explained_variance_ratio_.cumsum())
 
+# dim reduction: only take pc up to 90% variance
+num_pc=np.sum(pca.explained_variance_ratio_.cumsum()<=0.9)
 X_trans=pca.transform(X)
+X_red=X_trans[:,:num_pc]
+
+# k means clustering 
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+sil=[]
+kmax=50
+for k in range(2,kmax+1):
+    kmeans=KMeans(n_clusters=k).fit(X)
+    labels=kmeans.labels_
+    sil.append(silhouette_score(X,labels,metric='cosine'))
+plt.plot(sil)    
+# no real peak sil value, k means not effective
+
+# %% hierarchical clustering
+from scipy.cluster.hierarchy import dendrogram
+from sklearn.cluster import AgglomerativeClustering
 
 
-test=named_data.sort_values(by=['dim3'])
+def plot_dendrogram(model, **kwargs):
+    # Create linkage matrix and then plot the dendrogram
 
-x1=pca.inverse_transform(X_trans[:,0])
-# mds
+    # create the counts of samples under each node
+    counts = np.zeros(model.children_.shape[0])
+    n_samples = len(model.labels_)
+    for i, merge in enumerate(model.children_):
+        current_count = 0
+        for child_idx in merge:
+            if child_idx < n_samples:
+                current_count += 1  # leaf node
+            else:
+                current_count += counts[child_idx - n_samples]
+        counts[i] = current_count
+
+    linkage_matrix = np.column_stack([model.children_, model.distances_,
+                                      counts]).astype(float)
+
+    # Plot the corresponding dendrogram
+    dendrogram(linkage_matrix, **kwargs)
+
+X=named_data[feature_columns].to_numpy()
+
+dissimilarities=1-np.inner(X,X)
+dissimilarities[dissimilarities<0]=0
+X =dissimilarities
+
+# setting distance_threshold=0 ensures we compute the full tree.
+model = AgglomerativeClustering(distance_threshold=0, n_clusters=None )
+
+model = model.fit(X)
+plt.title('Hierarchical Clustering Dendrogram')
+# plot the top three levels of the dendrogram
+plot_dendrogram(model, truncate_mode='level')
+plt.xlabel("Number of points in node (or index of point if no parenthesis).")
+plt.show()
+
+
+# %% spectral clustering
+
+from sklearn.cluster import spectral_clustering
+
+spec_clus=spectral_clustering(dissimilarities)
+# %% mds
+from sklearn.manifold import MDS
+
+# calculate similarities using np.inner
+
+dissimilarities=1-np.inner(X,X)
+dissimilarities[dissimilarities<0]=0
+mds=MDS(dissimilarity='precomputed')
+mds=mds.fit(dissimilarities)
+pos=mds.embedding_
+
+plt.figure(figsize=[60,40])
+ax=plt.scatter(pos[:,0],pos[:,1],alpha=0.2)
+# add text to every 30 data point
+pic_ind=np.linspace(0,len(X_red)-1,num=300,dtype=int)
+
+for i in range(len(X_red)):
+    ax=plt.text(pos[i,0],pos[i,1],named_data.corrected.iloc[i],fontsize='xx-small')
+
+fig=ax.get_figure()
+fig.savefig('D:\\squiggles\\scripts\\behav\\sem_sim_py\\output\\figures\\mds_test_innersim.svg', bbox_inches='tight')
+
+
+# %% tsne
+from sklearn.manifold import TSNE
+
+#tsne on similarity matrix
+tsne=TSNE(metric='precomputed',)
+tsne.fit(dissimilarities)
+
+pos_tsne=tsne.embedding_
+
+plt.figure(figsize=[60,40])
+ax=plt.scatter(pos_tsne[:,0],pos_tsne[:,1],alpha=0.2)
+# add text to every 30 data point
+pic_ind=np.linspace(0,len(X_red)-1,num=300,dtype=int)
+
+for i in range(len(X_red)):
+    ax=plt.text(pos_tsne[i,0],pos_tsne[i,1],named_data.corrected.iloc[i],fontsize='xx-small')
+
+fig=ax.get_figure()
+fig.savefig('D:\\squiggles\\scripts\\behav\\sem_sim_py\\output\\figures\\tsne_test_innersim.svg', bbox_inches='tight')
