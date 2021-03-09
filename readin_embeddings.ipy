@@ -256,12 +256,11 @@ X=named_data[feature_columns].to_numpy()
 
 dissimilarities=1-np.inner(X,X)
 dissimilarities[dissimilarities<0]=0
-X =dissimilarities
 
 # setting distance_threshold=0 ensures we compute the full tree.
 model = AgglomerativeClustering(distance_threshold=0, n_clusters=None )
 
-model = model.fit(X)
+model = model.fit(dissimilarities)
 plt.title('Hierarchical Clustering Dendrogram')
 # plot the top three levels of the dendrogram
 plot_dendrogram(model, truncate_mode='level')
@@ -271,9 +270,16 @@ plt.show()
 
 # %% spectral clustering
 
-from sklearn.cluster import spectral_clustering
+from sklearn.cluster import SpectralClustering
+X=named_data[feature_columns].to_numpy()
 
-spec_clus=spectral_clustering(dissimilarities)
+similarities=np.inner(X,X)
+
+specclus=SpectralClustering(n_clusters=30,affinity='precomputed',assign_labels='discretize')
+specclus=specclus.fit(similarities)
+
+labels=specclus.labels_
+
 # %% mds
 from sklearn.manifold import MDS
 
