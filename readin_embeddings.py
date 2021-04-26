@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-#import scipy
+import scipy as sp
 import sys
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -101,9 +101,10 @@ def create_folder(*args):
 # %% plot embeddings similarity matrizes/ save as svg
 all_data=pd.DataFrame()
 all_paradigms=['pilot','mem']  #,'fmri']
+project_path='D:\\squiggles\\scripts\\behav\\sem_sim_py'
+
 for paradigm in all_paradigms:
-    project_path='D:\\squiggles\\scripts\\behav\\sem_sim_py\\'
-    csv_file='D:\\squiggles\\scripts\\behav\\sem_sim_py\data\\'+paradigm+'_namings.csv'
+    csv_file=os.path.join(project_path,'data',paradigm+'_namings.csv')
     
     
     column2embed='corrected'
@@ -185,7 +186,6 @@ mean_simdiff_peritem=np.mean(np.abs(diff_sim),axis=0)
 perc95=np.percentile(mean_simdiff_peritem,95)
 
 high_diff_data=sel_data_en.iloc[mean_simdiff_peritem>perc95,:]
-
 # %% get similarity per item
 
 # loop through all unique Pic
@@ -251,25 +251,7 @@ fig.savefig('D:\\squiggles\\scripts\\behav\\sem_sim_py\\output\\figures\\mean_si
 
 # check which dimension explain most variance in semsim (only use )
 
-# %% compare similarities of german and englisch embeddings
 
-all_data_en=pd.DataFrame()
-all_paradigms=['pilot','mem']  #,'fmri']
-for paradigm in all_paradigms:
-    project_path='D:\\squiggles\\scripts\\behav\\sem_sim_py\\'
-    csv_file='D:\\squiggles\\scripts\\behav\\sem_sim_py\data\\'+paradigm+'_namings.csv'
-       
-    column2embed='corrected'
-    columns2keep=['corrected','subject','Pic','named','PicID']
-    column2dropna='named' #leave empty if not needed
-    
-    data_en=read_embed_data(csv_file,column2embed,columns2keep,column2dropna)
-    
-    feature_columns=[x for x in list(data.columns) if 'dim' in x]
-    
-    data_en['paradigm']=paradigm
-    # combine all paradigms
-    all_data_en=all_data_en.append(data)
 # %% pca (also dimension reduction for clustering)
 
 from sklearn import decomposition
